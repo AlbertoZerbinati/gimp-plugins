@@ -1,0 +1,132 @@
+|##############|
+|  20/01/2021  |
+|##############|
+
+gli script vanno conservati in una cartella nota a gimp (Edit > Preferences > Folders > Plug-in)
+
+prima di tutto ci sono due modi per fare gimp scripting
+
+il primo è attraverso GUI di gimp:
+	si creano script python seguendo il template 'registration_template.py'
+	gli script vanno "registrati" e poi invocati con main()
+	compaiono dentro gimp, nella barra (MyScripts), da cui si possono lanciare tramite GUI
+	
+il secondo attraverso riga di comando:
+	un esempio è 'batch.py'
+	non necessita di registrare gli script nel pdb, non sporca la GUI -> più clean
+	necessita invece di una funzione run(dir)
+	comando CLI:
+		gimp-2.10 -idf --batch-interpreter python-fu-eval -b "import sys;sys.path=['.']+sys.path;import batch;batch.run('./')" -b "pdb.gimp_quit(1)"
+		gimp-console-2.10 (senza -idf) ... [questa versione non apre una shell ulteriore]
+	col comando di sopra funziona solo se viene lanciato dalla cartella che contiene lo script (['.']) *
+	bello perché implementando run(dir) in quel modo posso passare la cartella (in cui eseguire lo script su tutti i file contenuti) direttamente da CLI ('./')
+	sono da ignorare warnings/errori del tipo:
+		gimp-2.10: LibGimpBase-WARNING: gimp-2.10: gimp_wire_read(): error
+		gimp-console-2.10: LibGimpBase-WARNING: gimp-console-2.10: gimp_wire_read(): error
+	nota che batch.py funziona solo se creo una cartella processed di destinazione...
+ 
+
+* PER LANCIARE SCRIPT DA CARTELLE DIVERSE IMMAGINO BASTI TROVARE IL MODO DI AGGIORNARE BENE sys.path
+
+NON SONO STATO IN GRADO DI LANCIARE SCRIPT !registrati! DA RIGA DI COMANDO TRAMITE INTERPRETE python-fu, MA SOLO script-fu, 
+UN LINGUAGGIO DI SCRIPTING SUPPORTATO DA GIMP MA CHE NON CONOSCO. IN PARTICOLARE CON script-fu 
+MI FUNZIONANO SOLO SE NON HANNO PARAMETRI (poi c'è il discorso di RUN-NONINTERACTIVE obbligatorio...)
+ok ritiro
+PER LANCIARE SCRIPT !REGISTRATI! da CLI con python-fu uso:
+	gimp-console-2.10 -df --batch-interpreter python-fu-eval -b "from gimpfu import *;pdb.python_fu_NOME_FUNZIONE_REGISTRATA('PARAMS')" -b "pdb.gimp_quit(1)" > errors.txt 2>&1
+	CON I PARAMS NON HO ANCORA SPERIMENTATO
+
+DEVO ANCORA STUDIARE COME EFFETTIVAMENTE CODIFICARE UN'AUTOMATIZZAZIONE DEL WORKFLOW CHE MI SERVA
+
+REDIRECT DI stderr, stdout (CON >out.txt 2>&1 setto l'output in out.txt e l'error uguale ad out)
+
+
+
+|##############|
+|  21/01/2021  |
+|##############|
+
+oggi ho implementato i miei primi script, li ho registrati, e li ho lanciati sia da GUI che da CLI, con interprete python-fu-eval
+in particolare ho imparato che:
+	i parametri (image, drawable) [PF_IMAGE, PF_DRAWABLE] sono comodi per gli script GUI
+	per gli script CLI meglio usare un parametro (file) [PF_FILE], che comunque funziona anche da GUI, solo che ti fa scegliere un nuovo file da manipolare, mentre è molto
+probabile che da GUI si voglia solo implementare un'azione su un'immagine già aperta
+	gli script 'flip_reset.py' e 'gestione_file.py' sono quelli implementati da me, i miei primi due
+	il secondo è particolarmente importante perché riesce a lavorare su un file, 
+estrarne l'immagine ed il layer attivo e salvarne una copia in un file a scelta: ATT! NON CHIEDE PRIMA DI SOVRASCRIVERE
+
+
+ORA DEVO IMPARARE A GESTIRE CARTELLE
+DEVO INDAGARE SULLA COSA DEGLI undo
+NOTA: posso far apparire scripts sulla <Toolbox>, invece che in <Image>/MyScripts
+
+
+
+|##############|
+|  22/01/2021  |
+|##############|
+
+ho implementato 'gestione_dir.py': 
+	prende una cartella in input ed una per salvare l'output
+	per ogni immagine nella cartella di input:
+		applica un filtro (cubism, con parametri preimpostati [6, 3.5, 0])
+		salva l'immagine filtrata nella cartella di output
+	funziona sia da GUI che da CLI molto bene; comando CLI usato e':
+		gimp-console-2.10 -df --batch-interpreter python-fu-eval -b "from gimpfu import *;pdb.python_fu_gestione_dir('C:\\Users\\39366\\Desktop\\images', 'C:\\Users\\39366\\Desktop\\dest')" -b "pdb.gimp_quit(1)"
+
+
+ADESSO BISOGNA CONCENTRARSI SUL REALIZZARE UNO SCRIPT CHE FACCIA QUELLO CHE VOGLIO:
+	riceve una cartella input ed una output
+	per ogni foto in input:
+		estrapola image e drawable
+		verifica se livello ha canale alpha:
+			se non lo ha lo aggiunge
+		seleziona (il background) per colore (param {black, white}):
+			??? esiste un modo migliore forse ???
+		elimina la selezione
+		salva come .png per mantenere la trasparenza ottenuta
+
+MI ACCORGO CHE SAREBBE MEGLIO CREARE UN SCRIPT CHE RIMUOVE IL BG DA una FOTO E RICHIAMARLO DA UN altro SCRIPT SU tutte LE FOTO di una cartella
+ PER ORA IN 'remove_bg.py' AGISCO SU una FOTO, POI VEDO COME PROSEGUIRE
+	ADDIRITTURA IL TOP SAREBBE 'remove_bg.py' AGENTE SU (image, drawable) IN MODO CHE SIA COMODO ANCHE DA GUI, MENTRE LO SCRIPT DI SUPPORTO SI 
+	 POTREBBE OCCUPARE DI RETRIVIARE SIA I FILE DALLA CARTELLA PASSATA, SIA (image, drawable) DA ESSI
+
+ho realizzato 'remove_bg.py':
+	ottiene (image, drawable, out_file)
+	tramite strumento fuzzy rimuove lo sfondo
+	salva l'immagine ottenuta in out_file
+
+realizzo ora 'apply_to_dir.py':
+
+MA VAFFANCULO
+NON FUNZIONAVA CON 2 SCRIPT SEPARATI, CASINI CON GLI IMPORT...
+HO ACCORPATO TUTTO IN 'remove_bg_dir.py'
+FUNZIONA MOLTO BENE DA GUI, ORA PROVO DA CLI
+ALLA FINE HO DECISO CHE ERA MEGLIO LA SELEZIONE CON COLOR-PICKER + BY-COLOR-SELECTION
+
+
+
+|##############|
+|  23/01/2021  |
+|##############|
+
+eccoci al giorno del giudizio
+
+BUG: SE L'IMMAGINE PNG DA ELABORARE HA GIA' TRASPARENZA DOVE COMPIO LO SELEZIONE OTTENGO UN ERRORE
+
+L'ALGORITMO NON SI APPLICA MOLTO MOLTO BENE AL CASO PRATICO PER QUESTI MOTIVI:
+	PER OTTENERE TUTTE LE IMMAGINI DA UN .pptx, IL MIO CASO DI INTERESSE, BASTA RINOMINARLO .zip E CERCARE I media NELLA SOTTOCARTELLA ppt
+	PROBLEMA 1: NON POSSO RINOMINARE I MEDIA, O FORSE POTREI MA DOVREI METTERE MANO SU ALTRO CODICE
+	PROBLEMA 2, CONSEGUENZA DELL'1: NON POSSO RIMUOVERE LO SFONDO DALLE .jpeg, .jpg, PERCHE' QUESTO VORREBBE DIRE SALVARLE COME .png PER MANTENERE LA TRASPARENZA 
+ED IL .pptx RISULTANTE NON RICONOSCEREBBE LE IMMAGINI CORRETTAMENTE
+	PROBLEMA 3: E' IL BUG VISTO IN PRECEDENZA
+
+allora
+	trasformo in .zip
+	salvo i ppt/media
+	estrapolo tutto ciò che non e' .png in una cartella
+	estrapolo tutti i .png con sfondo trasparente in una cartella
+	eseguo l'algoritmo sui rimanenti png, salvando nella cartella dove ho già estrapolato in PRECEDENZA
+
+L'ALGORITMO FUNZIONA E ANCHE BENE, A VOLTE SI INTRALLACCIA UN PO' MALE SULLE PAROLE DA SCONTORNARE, MA NEANCHE TANTO
+IL PROBLEMA E' SOLO UN PO' LA DIFFICOLTA' DI UTILIZZO !! nel mio caso d'uso specifico !!
